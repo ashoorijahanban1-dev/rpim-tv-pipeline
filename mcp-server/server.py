@@ -1,10 +1,22 @@
 import os
+import sys
 import psutil
 import subprocess
-from mcp.server.fastmcp import FastMCP
 
-# Initialize FastMCP Server
-mcp = FastMCP("RemoteOpsServer")
+# Ensure UTF-8 output encoding
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+# Compatible import across MCP versions
+try:
+    from mcp.server.fastmcp import FastMCP
+    mcp = FastMCP("RemoteOpsServer")
+except Exception:
+    from mcp.server.mcpserver import MCPServer
+    mcp = MCPServer("RemoteOpsServer")
 
 AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
 
@@ -15,9 +27,9 @@ def get_system_health() -> str:
     ram = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     return (
-        f"🖥️ CPU Usage: {cpu}%\n"
-        f"💾 RAM: {ram.percent}% (Used: {ram.used // (1024**2)}MB / Total: {ram.total // (1024**2)}MB)\n"
-        f"📁 Disk: {disk.percent}% (Free: {disk.free // (1024**3)}GB)"
+        f"[CPU] Usage: {cpu}%\n"
+        f"[RAM] Usage: {ram.percent}% (Used: {ram.used // (1024**2)}MB / Total: {ram.total // (1024**2)}MB)\n"
+        f"[Disk] Usage: {disk.percent}% (Free: {disk.free // (1024**3)}GB)"
     )
 
 @mcp.tool()
@@ -53,9 +65,9 @@ def restart_docker_container(container_name: str) -> str:
             ["docker", "restart", container_name],
             capture_output=True, text=True, check=True
         )
-        return f"✅ کانتینر {container_name} با موفقیت ری‌استارت شد."
+        return f"کانتینر {container_name} با موفقیت ری‌استارت شد."
     except Exception as e:
-        return f"❌ خطا در ری‌استارت کانتینر {container_name}: {str(e)}"
+        return f"خطا در ری‌استارت کانتینر {container_name}: {str(e)}"
 
 @mcp.tool()
 def execute_command(command: str) -> str:
@@ -67,9 +79,9 @@ def execute_command(command: str) -> str:
         output = res.stdout if res.stdout else res.stderr
         return output if output.strip() else "دستور بدون خروجی متنی با موفقیت اجرا شد."
     except subprocess.TimeoutExpired:
-        return "⚠️ اجرای دستور به دلیل طولانی شدن (بیش از ۳۰ ثانیه) متوقف شد."
+        return "اجرای دستور به دلیل طولانی شدن (بیش از ۳۰ ثانیه) متوقف شد."
     except Exception as e:
-        return f"❌ خطا در اجرای دستور: {str(e)}"
+        return f"خطا در اجرای دستور: {str(e)}"
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
