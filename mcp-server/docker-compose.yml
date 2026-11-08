@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  remote-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: remote-mcp-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-secure_mcp_token_change_me}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
