@@ -2,6 +2,13 @@ import os
 import sys
 import psutil
 import subprocess
+import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route, Mount
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from mcp.server.fastmcp import FastMCP
 
 # Ensure UTF-8 output encoding
 if sys.stdout.encoding != 'utf-8':
@@ -10,15 +17,17 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-# Compatible import across MCP versions
-try:
-    from mcp.server.fastmcp import FastMCP
-    mcp = FastMCP("RemoteOpsServer")
-except Exception:
-    from mcp.server.mcpserver import MCPServer
-    mcp = MCPServer("RemoteOpsServer")
+# Initialize FastMCP
+mcp = FastMCP("RemoteOpsServer")
+
+# Allow Gemini Web App and any origin/host
+mcp.settings.transport_security.enable_dns_rebinding_protection = False
+mcp.settings.transport_security.allowed_hosts = ["*"]
+mcp.settings.transport_security.allowed_origins = ["*"]
 
 AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
+
+# ----------------- MCP Tools -----------------
 
 @mcp.tool()
 def get_system_health() -> str:
@@ -83,8 +92,44 @@ def execute_command(command: str) -> str:
     except Exception as e:
         return f"خطا در اجرای دستور: {str(e)}"
 
+# ----------------- Combined ASGI Server -----------------
+# 1. /mcp ➔ Gemini Developer Mode (Streamable HTTP)
+# 2. /sse & /messages ➔ Cherry Studio, Claude Desktop, Antigravity
+# 3. /health ➔ Coolify health checks
+
+streamable_app = mcp.streamable_http_app()
+sse_app = mcp.sse_app()
+
+async def health_check(request):
+    return JSONResponse({
+        "status": "healthy",
+        "service": "mcp-universal-server",
+        "version": "1.0.0",
+        "supported_transports": ["streamable-http", "sse"]
+    })
+
+app = Starlette(
+    routes=[
+        Route("/health", health_check),
+        Route("/", health_check),
+        Mount("/mcp", streamable_app),
+        Mount("/", sse_app),
+    ],
+    middleware=[
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["*"],
+        )
+    ]
+)
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
-    print(f"Starting FastMCP SSE Server on {host}:{port}...")
-    mcp.run(transport="sse", host=host, port=port)
+    print(f"Starting Universal MCP Server on {host}:{port}...")
+    print(f" -> Gemini Apps Developer Mode: http://{host}:{port}/mcp")
+    print(f" -> SSE Clients (Cherry Studio / Claude): http://{host}:{port}/sse")
+    uvicorn.run(app, host=host, port=port)
